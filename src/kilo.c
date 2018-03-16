@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <sys/ioctl.h>
 #include <stdio.h>
 #include <ctype.h>
 
@@ -23,9 +24,15 @@ OPOST: Disables output processing
 
 /*** data ***/
 
-// Original terminal attributes
-struct termios orig_termios;
+// Struct to contain editor state
+struct editorConfig {
+  int screenrows;
+  int screencols;
+  // Original terminal attributes
+  struct termios orig_termios;
+};
 
+struct editorConfig E;
 /*** terminal ***/
 
 // Prints error message and exits program
@@ -41,16 +48,16 @@ void die(const char *s) {
 // Disable raw mode at exit
 void disableRawMode() {
   // Error handling
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios) == -1)
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
     die("tcsetattr");
 }
 
 void enableRawMode() {
-  if (tcgetattr(STDIN_FILENO, &orig_termios) == -1) die("tcgetattr");
+  if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) die("tcgetattr");
   atexit(disableRawMode);
 
   // Make copy of original before making changes
-  struct termios raw = orig_termios;
+  struct termios raw = E.orig_termios;
   // Disables terminal flags (see above for details)
   raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
   raw.c_oflag &= ~(OPOST);
@@ -74,11 +81,36 @@ char editorReadKey() {
   return c;
 }
 
+// Get the current size of the terminal window
+int getWindowSize(int *rows, int *cols) {
+  struct winsize ws;
+
+  if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
+    return -1;
+  } else {
+    *cols = ws.ws_col;
+    *rows = ws.ws_row;
+    return 0;
+  }
+}
+
 /*** output ***/
+
+// Draw column of tildas on left hand side of screen
+void editorDrawRows() {
+  int y;
+  for (y = 0; y < E.screenrows; y++) {
+    write(STDOUT_FILENO, "~\r\n", 3);
+  }
+}
 
 // Refreshes screen by writing escape sequence to terminal after each keypress
 void editorRefreshScreen() {
   write(STDIN_FILENO, "\x1b[2J", 4);
+  write(STDOUT_FILENO, "\x1b[H", 3);
+
+  editorDrawRows();
+
   // Reposition cursor on screen
   write(STDOUT_FILENO, "\x1b[H", 3);
 }
@@ -99,8 +131,14 @@ void editorProcessKeypress() {
 
 /*** init ***/
 
+// Initialize fields in E struct
+void initEditor() {
+  if (getWindowSize(&E.screenrows, &E.screencols) == -1) die ("getWindowSize");
+}
+
 int main() {
   enableRawMode();
+  initEditor();
 
   while (1) {
     editorRefreshScreen();
