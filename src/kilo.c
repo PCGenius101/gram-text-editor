@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -116,29 +117,62 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+/*** append buffer ***/
+
+struct abuf {
+  char *b;
+  int len;
+};
+
+#define ABUF_INIT {NULL, 0}
+
+// Append to buffer to prevent small flickers between writes
+void abAppend(struct abuf *ab, const char *s, int len) {
+  // Allocate memory to hold new string
+  char *new = realloc(ab->b, ab->len + len);
+
+  if (new == NULL) return;
+  // Copy string s after end of current data in buffer
+  memcpy(&new[ab->len], s, len);
+  ab->b = new;
+  ab->len += len;
+}
+
+// Deallocates dynamic memory used by struct abuf
+void abFree(struct abuf *ab) {
+  free(ab->b);
+}
+
 /*** output ***/
 
 // Draw column of tildas on left hand side of screen
-void editorDrawRows() {
+void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
-    write(STDOUT_FILENO, "~", 1);
+    abAppend(ab, "~", 1);
 
     if (y < E.screenrows - 1) {
-      write(STDOUT_FILENO, "\r\n", 2);
+      abAppend(ab, "\r\n", 2);
     }
   }
 }
 
 // Refreshes screen by writing escape sequence to terminal after each keypress
 void editorRefreshScreen() {
-  write(STDIN_FILENO, "\x1b[2J", 4);
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  struct abuf ab = ABUF_INIT;
 
-  editorDrawRows();
+  abAppend(&ab, "\x1b[2J", 4);
+  abAppend(&ab, "\x1b[H", 3);
+
+  editorDrawRows(&ab);
 
   // Reposition cursor on screen
-  write(STDOUT_FILENO, "\x1b[H", 3);
+  abAppend(&ab, "\x1b[H", 3);
+
+  // Write contents of buffer to screen
+  write(STDOUT_FILENO, ab.b, ab.len);
+  // Deallocate memory
+  abFree(&ab);
 }
 
 /*** input ***/
