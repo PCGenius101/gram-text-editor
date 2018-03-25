@@ -1,0 +1,2 @@
+This is a test
+Hello everybody this is another test of the kilo text editor version 0.53
