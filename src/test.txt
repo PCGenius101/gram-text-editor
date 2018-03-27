@@ -1,4 +1,7 @@
 This is a test
+Great that works
 Hello everybody this is another test of the kilo text editor version 0.53
 I can delete stuff now!
 Yay!
+I'm going to try and spl
+it the line into two pieces
