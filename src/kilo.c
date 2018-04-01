@@ -225,6 +225,20 @@ int editorRowCxToRx(erow *row, int cx) {
   return rx;
 }
 
+int editorRowRxToCx(erow *row, int rx) {
+  int cur_rx = 0;
+  int cx;
+  for (cx = 0; cx < row->size; cx++) { // Loop through chars string
+    if (row->chars[cx] == '\t')
+      cur_rx += (KILO_TAB_STOP - 1) - (cur_rx % KILO_TAB_STOP); // Calculate current rx value
+    cur_rx++;
+
+    // Stop when current rx hits given rx value
+    if (cur_rx > rx) return cx;
+  }
+  return cx;
+}
+
 void editorUpdateRow(erow *row) {
   int tabs = 0;
   int j;
@@ -438,6 +452,31 @@ void editorSave() {
   editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
 }
 
+/*** find ***/
+
+void editorFind() {
+  char *query = editorPrompt("Search: %s (ESC to cancel)");
+  if (query == NULL) return;
+
+  int i;
+  // Loop through all the rows of file
+  for (i = 0; i < E.numrows; i++) {
+    erow *row = &E.row[i];
+    // Check if row contains query string
+    char *match = strstr(row->render, query);
+    // Move cursor to the match
+    if (match) {
+      E.cy = i;
+      E.cx = editorRowRxToCx(row, match - row->render);
+      E.cx = match - row->render;
+      E.rowoff = E.numrows;
+      break;
+    }
+  }
+
+  free(query);
+}
+
 /*** append buffer ***/
 
 struct abuf {
@@ -600,8 +639,10 @@ char *editorPrompt(char *prompt) {
     editorRefreshScreen();
 
     int c = editorReadKey();
-    // If escape key, cancel prompt
-    if (c == '\x1b') {
+    // Allow user to press Backspace in input prompt
+    if (c == DEL_KEY || c == CTRL_KEY('h') || c == BACKSPACE) {
+      if (buflen != 0) buf[--buflen] = '\0';
+    } else if (c == '\x1b') { // If escape key, cancel prompt
       editorSetStatusMessage("");
       free(buf);
       return NULL;
@@ -697,6 +738,10 @@ void editorProcessKeypress() {
         E.cx = E.row[E.cy].size;
       break;
 
+    case CTRL_KEY('f'):
+      editorFind();
+      break;
+
     case BACKSPACE:
     case CTRL_KEY('h'):
     case DEL_KEY:
@@ -767,7 +812,7 @@ int main(int argc, char *argv[]) {
     editorOpen(argv[1]);
   }
 
-  editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit");
+  editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
 
   while (1) {
     editorRefreshScreen();
