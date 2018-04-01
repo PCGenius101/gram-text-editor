@@ -438,6 +438,30 @@ void editorSave() {
   editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
 }
 
+/*** find ***/
+
+void editorFind() {
+  char *query = editorPrompt("Search: %s (ESC to cancel)");
+  if (query == NULL) return;
+  
+  int i;
+  // Loop through all the rows of file
+  for (i = 0; i < E.numrows; i++) {
+    erow *row = &E.row[i];
+    // Check if row contains query string
+    char *match = strstr(row->render, query);
+    // Move cursor to the match
+    if (match) {
+      E.cy = i;
+      E.cx = match - row->render;
+      E.rowoff = E.numrows;
+      break;
+    }
+  }
+
+  free(query);
+}
+
 /*** append buffer ***/
 
 struct abuf {
@@ -600,8 +624,10 @@ char *editorPrompt(char *prompt) {
     editorRefreshScreen();
 
     int c = editorReadKey();
-    // If escape key, cancel prompt
-    if (c == '\x1b') {
+    // Allow user to press Backspace in input prompt
+    if (c == DEL_KEY || c == CTRL_KEY('h') || c == BACKSPACE) {
+      if (buflen != 0) buf[--buflen] = '\0';
+    } else if (c == '\x1b') { // If escape key, cancel prompt
       editorSetStatusMessage("");
       free(buf);
       return NULL;
