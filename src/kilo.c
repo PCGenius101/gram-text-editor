@@ -29,7 +29,7 @@ OPOST: Disables output processing
 
 /*** defines ***/
 
-#define KILO_VERSION "0.8"
+#define KILO_VERSION "1.0"
 #define KILO_TAB_STOP 8
 #define KILO_QUIT_TIMES 2
 
@@ -48,6 +48,13 @@ enum editorKey {
   PAGE_DOWN
 };
 
+enum editorHighlight {
+  HL_NORMAL = 0,
+  HL_NUMBER,
+  HL_MATCH
+};
+
+
 /*** data ***/
 
 // Data type for storing a row of text
@@ -56,6 +63,8 @@ typedef struct erow {
   int rsize;
   char *chars;
   char *render;
+  // Array with highlighting of each line
+  unsigned char *hl;
 } erow;
 
 // Struct to contain editor state
@@ -211,6 +220,32 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+/*** syntax highlighting ***/
+
+void editorUpdateSyntax(erow *row) {
+  // Allocate needed memory
+  row->hl = realloc(row->hl, row->rsize);
+  // Set all characters to HL_NORMAL by default
+  memset(row->hl, HL_NORMAL, row->rsize);
+
+  int i;
+  // Loop through characters and set digits to HL_NUNBER
+  for (i = 0; i < row->rsize; i++) {
+    if (isdigit(row->render[i])) {
+      row->hl[i] = HL_NUMBER;
+    }
+  }
+}
+
+int editorSyntaxToColor(int hl) {
+  // Return ANSI code for each text
+  switch (hl) {
+    case HL_NUMBER: return 31; // Set numbers to red
+    case HL_MATCH: return 34;
+    default: return 37; // Set anything else to white
+  }
+}
+
 /*** row operations ***/
 
 int editorRowCxToRx(erow *row, int cx) {
@@ -260,6 +295,8 @@ void editorUpdateRow(erow *row) {
   }
   row->render[idx] = '\0';
   row->rsize = idx;
+
+  editorUpdateSyntax(row);
 }
 
 
@@ -276,6 +313,7 @@ void editorInsertRow(int at, char *s, size_t len) {
 
   E.row[at].rsize = 0;
   E.row[at].render = NULL;
+  E.row[at].hl = NULL;
   editorUpdateRow(&E.row[at]);
 
   E.numrows++;
@@ -285,6 +323,7 @@ void editorInsertRow(int at, char *s, size_t len) {
 void editorFreeRow(erow *row) {
   free(row->render);
   free(row->chars);
+  free(row->hl);
 }
 
 void editorDelRow(int at) {
@@ -594,9 +633,35 @@ void editorDrawRows(struct abuf *ab) {
       int len = E.row[filerow].rsize - E.coloff;
       if (len < 0) len = 0;
       if (len > E.screencols) len = E.screencols;
-      // Write out chars field of erow to buffer
-      abAppend(ab, &E.row[filerow].render[E.coloff], len);
+      char *c = &E.row[filerow].render[E.coloff];
+      // Get pointer with part of hl array that corresponds to current part of render
+      unsigned char *hl = &E.row[filerow].hl[E.coloff];
+      int current_color = -1; // -1 for default
+      int j;
+      for (j = 0; j < len; j++) {
+        if (hl[j] == HL_NORMAL) { // If HL_NORMAL char set to default text color
+          if (current_color != -1) {
+            abAppend(ab, "\x1b[39m", 5);
+            current_color = -1;
+          }
+          abAppend(ab, &c[j], 1);
+        } else {
+          int color = editorSyntaxToColor(hl[j]);
+          if (color != current_color) { // When color changes
+            // Set curent_color to value editorSyntaxToColor last returned
+            current_color = color;
+            char buf[16];
+            // Write escape sequence to buffer with color
+            int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", color);
+            // Append character
+            abAppend(ab, buf, clen);
+          }
+          abAppend(ab, &c[j], 1);
+        }
+      }
+      abAppend(ab, "\x1b[39m", 5);
     }
+
     abAppend(ab, "\x1b[K", 3);
     abAppend(ab, "\r\n", 2);
   }
