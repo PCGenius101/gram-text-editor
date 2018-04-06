@@ -222,18 +222,35 @@ int getWindowSize(int *rows, int *cols) {
 
 /*** syntax highlighting ***/
 
+// If string doesn't contain character return NULL, otherwise return pointer to character
+int is_seperator(int c) {
+  return isspace(c) || c == '\0' || strchr(",.()+-/*=~%<>[];", c) != NULL;
+}
+
 void editorUpdateSyntax(erow *row) {
   // Allocate needed memory
   row->hl = realloc(row->hl, row->rsize);
   // Set all characters to HL_NORMAL by default
   memset(row->hl, HL_NORMAL, row->rsize);
+  // Check if previous character was seperator
+  int prev_sep = 1;
 
-  int i;
-  // Loop through characters and set digits to HL_NUNBER
-  for (i = 0; i < row->rsize; i++) {
-    if (isdigit(row->render[i])) {
+  int i = 0;
+  // Loop through characters and set digits to HL_NUMBER
+  while (i < row->rsize) {
+    char c = row->render[i];
+    // Highlight type of previous character
+    unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+    // To highlight digit, previous char must be seperator or also highlighted with HL_NUMBER
+    if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) || (c == '.' && prev_hl == HL_NUMBER)) {
       row->hl[i] = HL_NUMBER;
+      i++;
+      prev_sep = 0;
+      continue;
     }
+
+    prev_sep = is_seperator(c);
+    i++;
   }
 }
 
@@ -543,6 +560,10 @@ void editorFindCallback(char *query, int key) {
       E.cx = match - row->render;
       E.rowoff = E.numrows;
 
+      saved_hl_line = current;
+      saved_hl = malloc(row->rsize);
+
+      memcpy(saved_hl, row->hl, row->rsize);
       memset(&row->hl[match - row->render], HL_MATCH, strlen(query));
       break;
     }
