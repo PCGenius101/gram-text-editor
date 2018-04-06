@@ -497,6 +497,15 @@ void editorFindCallback(char *query, int key) {
   static int last_match = -1;
   static int direction = 1;
 
+  static int saved_hl_line; // Saves line to have highlighting restored
+  static char *saved_hl = NULL; // Saves highlighting to restore
+
+  if (saved_hl) {
+    memcpy(E.row[saved_hl_line].hl, saved_hl, E.row[saved_hl_line].rsize);
+    free(saved_hl);
+    saved_hl = NULL;
+  }
+
   // If pressed enter or escape, exit search mode
   if (key == '\r' || key == '\x1b') {
     // Index of row the last match was on, -1 of no last match
@@ -533,6 +542,8 @@ void editorFindCallback(char *query, int key) {
       E.cx = editorRowRxToCx(row, match - row->render);
       E.cx = match - row->render;
       E.rowoff = E.numrows;
+
+      memset(&row->hl[match - row->render], HL_MATCH, strlen(query));
       break;
     }
   }
