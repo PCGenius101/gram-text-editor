@@ -54,8 +54,16 @@ enum editorHighlight {
   HL_MATCH
 };
 
+#define HL_HIGHLIGHT_NUMBERS (1<<0)
+
 
 /*** data ***/
+
+struct editorSyntax {
+  char *filetype; // Name of file type to be displayed
+  char **filematch; // Array of strings to match filename against
+  int flags; // Contains flags for whether to highlight numbers or strings for filetype
+}
 
 // Data type for storing a row of text
 typedef struct erow {
@@ -78,17 +86,33 @@ struct editorConfig {
   int screenrows;
   int screencols;
   int numrows;
-  erow *row;
+  erow *row;``
   // Dirty variable, dirty if been modified since opening or saving file
   int dirty;
   char *filename;
   char statusmsg[80];
   time_t statusmsg_time;
+  struct editorSyntax *syntax;
   // Original terminal attributes
   struct termios orig_termios;
 };
 
 struct editorConfig E;
+
+/*** filetypes ***/
+
+char *C_HL_extensions[] = { ".c", ".h", ".cpp", NULL};
+
+// Highlight database
+struct editorSyntax HLDB[] = {
+  {
+    "c",
+    C_HL_extensions,
+    HL_HIGHLIGHT_NUMBERS
+  },
+};
+// Length of HLDB array
+#define HLDB_ENTIRES (sizeof(HLDB) / sizeof(HLDB[0]))
 
 /*** prototypes ***/
 
@@ -232,6 +256,9 @@ void editorUpdateSyntax(erow *row) {
   row->hl = realloc(row->hl, row->rsize);
   // Set all characters to HL_NORMAL by default
   memset(row->hl, HL_NORMAL, row->rsize);
+  // If no filetype is set return immediatly
+  if (E.syntax == NULL) return;
+
   // Check if previous character was seperator
   int prev_sep = 1;
 
@@ -241,12 +268,16 @@ void editorUpdateSyntax(erow *row) {
     char c = row->render[i];
     // Highlight type of previous character
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
-    // To highlight digit, previous char must be seperator or also highlighted with HL_NUMBER
-    if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) || (c == '.' && prev_hl == HL_NUMBER)) {
-      row->hl[i] = HL_NUMBER;
-      i++;
-      prev_sep = 0;
-      continue;
+
+    // Check if numbers should be highlighted for current file type
+    if (E.syntax->flags & HL_HIGHLIGHT_NUMBERS) {
+      // To highlight digit, previous char must be seperator or also highlighted with HL_NUMBER
+      if ((isdigit(c) && (prev_sep || prev_hl == HL_NUMBER)) || (c == '.' && prev_hl == HL_NUMBER)) {
+        row->hl[i] = HL_NUMBER;
+        i++;
+        prev_sep = 0;
+        continue;
+      }
     }
 
     prev_sep = is_seperator(c);
@@ -260,6 +291,37 @@ int editorSyntaxToColor(int hl) {
     case HL_NUMBER: return 31; // Set numbers to red
     case HL_MATCH: return 34;
     default: return 37; // Set anything else to white
+  }
+}
+
+void editorSelectSyntaxHighlight() {
+  E.syntax = NULL;
+  if (E.filename == NULL) return;
+  // Find last occurrence of . characrer to get extension part of filename
+  char *ext = strrchr(E.filename, '.');
+
+  // Loop through editSyntax in HLDB
+  for (unsigned int j = 0; j < HLDB_ENTIRES; j++) {
+    struct editorSyntax *s = &HLDB[j];
+    unsigned int i = 0;
+    // Loop through each pattern in filematch array
+    while (s->filematch[i]) {
+      int is_ext = (s->filematch[i][0] == '.'); // If starts with a . then file extension pattern
+      // Check if filename ends with extension
+      if ((is_ext && ext && !strcmp(ext, s->filematch[i])) || (!is_ext && strstr(E.filename, s->filematch[j]))) {
+        // Set E.syntax to current editorSyntax struct
+        E.syntax = s;
+
+        // Rehighlight entire file
+        int filerow;
+        for (filerow = 0; filerow < E.numrows; filerow++) {
+          editorUpdateSyntax(&E.row[filerow]);
+        }
+
+        return;
+      }
+      i++;
+    }
   }
 }
 
@@ -459,6 +521,8 @@ void editorOpen(char *filename) {
   free(E.filename);
   E.filename = strdup(filename);
 
+  editorSelectSyntaxHighlight();
+
   FILE *fp = fopen(filename, "r");
   if (!fp) die("fopen");
 
@@ -483,6 +547,7 @@ void editorSave() {
       editorSetStatusMessage("Save aborted");
       return;
     }
+    editorSelectSyntaxHighlight();
   }
 
   int len;
@@ -703,6 +768,7 @@ void editorDrawStatusBar(struct abuf *ab) {
   abAppend(ab, "\x1b[7m", 4);
   char status[80], rstatus[80];
   int len = snprintf(status, sizeof(status), "%.20s - %d lines %s", E.filename ? E.filename : "[No Name]", E.numrows, E.dirty ? "(modified)" : "");  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
+  int rlen = snprintf(rstatus, sizeof(rstatus), "%s | %d/%d", E.syntax ? E.syntax->filetype : "no ft", E.cy + 1, E.numrows);
   if (len > E.screencols) len = E.screencols;
   abAppend(ab, status, len);
   while (len < E.screencols) {
@@ -942,6 +1008,7 @@ void initEditor() {
   E.filename = NULL;
   E.statusmsg[0] = '\0';
   E.statusmsg_time = 0;
+  E.syntax = NULL
 
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die ("getWindowSize");
   E.screenrows -= 2;
