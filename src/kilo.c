@@ -50,11 +50,13 @@ enum editorKey {
 
 enum editorHighlight {
   HL_NORMAL = 0,
+  HL_STRING,
   HL_NUMBER,
   HL_MATCH
 };
 
 #define HL_HIGHLIGHT_NUMBERS (1<<0)
+#define HL_HIGHLIGHT_STRINGS (1<<1)
 
 
 /*** data ***/
@@ -63,7 +65,7 @@ struct editorSyntax {
   char *filetype; // Name of file type to be displayed
   char **filematch; // Array of strings to match filename against
   int flags; // Contains flags for whether to highlight numbers or strings for filetype
-}
+};
 
 // Data type for storing a row of text
 typedef struct erow {
@@ -86,7 +88,7 @@ struct editorConfig {
   int screenrows;
   int screencols;
   int numrows;
-  erow *row;``
+  erow *row;
   // Dirty variable, dirty if been modified since opening or saving file
   int dirty;
   char *filename;
@@ -108,7 +110,7 @@ struct editorSyntax HLDB[] = {
   {
     "c",
     C_HL_extensions,
-    HL_HIGHLIGHT_NUMBERS
+    HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
   },
 };
 // Length of HLDB array
@@ -261,6 +263,8 @@ void editorUpdateSyntax(erow *row) {
 
   // Check if previous character was seperator
   int prev_sep = 1;
+  // Keep track of whether currently inside string
+  int in_string  = 0;
 
   int i = 0;
   // Loop through characters and set digits to HL_NUMBER
@@ -268,6 +272,31 @@ void editorUpdateSyntax(erow *row) {
     char c = row->render[i];
     // Highlight type of previous character
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+
+    // Highlight character as string until closing quote
+    if (E.syntax->flags & HL_HIGHLIGHT_STRINGS) {
+      if (in_string) {
+        row->hl[i] = HL_STRING;
+        // If current character is backslash, and one more character in line, highlight character after backslash
+        if (c == '\\' && i + 1 < row->rsize) {
+          row->hl[i + 1] = HL_STRING;
+          i += 2;
+          continue;
+        }
+        // Check if current character is closing quote
+        if (c == in_string) in_string = 0;
+        i++;
+        prev_sep = 1; // Closing quote is considered seperator
+        continue;
+      } else {
+        if (c == '"' || c == '\'') { // Check if at beginning of string
+          in_string = c; // Store quote in in_string and highlight it
+          row->hl[i] = HL_STRING;
+          i++;
+          continue;
+        }
+      }
+    }
 
     // Check if numbers should be highlighted for current file type
     if (E.syntax->flags & HL_HIGHLIGHT_NUMBERS) {
@@ -288,8 +317,9 @@ void editorUpdateSyntax(erow *row) {
 int editorSyntaxToColor(int hl) {
   // Return ANSI code for each text
   switch (hl) {
+    case HL_STRING: return 35; // Set strings to magenta
     case HL_NUMBER: return 31; // Set numbers to red
-    case HL_MATCH: return 34;
+    case HL_MATCH: return 34; // Set search matches to blue
     default: return 37; // Set anything else to white
   }
 }
@@ -767,7 +797,7 @@ void editorDrawRows(struct abuf *ab) {
 void editorDrawStatusBar(struct abuf *ab) {
   abAppend(ab, "\x1b[7m", 4);
   char status[80], rstatus[80];
-  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s", E.filename ? E.filename : "[No Name]", E.numrows, E.dirty ? "(modified)" : "");  int rlen = snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cy + 1, E.numrows);
+  int len = snprintf(status, sizeof(status), "%.20s - %d lines %s", E.filename ? E.filename : "[No Name]", E.numrows, E.dirty ? "(modified)" : "");
   int rlen = snprintf(rstatus, sizeof(rstatus), "%s | %d/%d", E.syntax ? E.syntax->filetype : "no ft", E.cy + 1, E.numrows);
   if (len > E.screencols) len = E.screencols;
   abAppend(ab, status, len);
@@ -1008,7 +1038,7 @@ void initEditor() {
   E.filename = NULL;
   E.statusmsg[0] = '\0';
   E.statusmsg_time = 0;
-  E.syntax = NULL
+  E.syntax = NULL;
 
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die ("getWindowSize");
   E.screenrows -= 2;
