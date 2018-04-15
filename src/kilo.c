@@ -50,6 +50,9 @@ enum editorKey {
 
 enum editorHighlight {
   HL_NORMAL = 0,
+  HL_COMMENT,
+  HL_KEYWORD1,
+  HL_KEYWORD2,
   HL_STRING,
   HL_NUMBER,
   HL_MATCH
@@ -64,6 +67,7 @@ enum editorHighlight {
 struct editorSyntax {
   char *filetype; // Name of file type to be displayed
   char **filematch; // Array of strings to match filename against
+  char *singleline_comment_start; // Pattern for signle line comments
   int flags; // Contains flags for whether to highlight numbers or strings for filetype
 };
 
@@ -110,6 +114,7 @@ struct editorSyntax HLDB[] = {
   {
     "c",
     C_HL_extensions,
+    "//",
     HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
   },
 };
@@ -260,7 +265,10 @@ void editorUpdateSyntax(erow *row) {
   memset(row->hl, HL_NORMAL, row->rsize);
   // If no filetype is set return immediatly
   if (E.syntax == NULL) return;
-
+  // Alias
+  char *scs = E.syntax->singleline_comment_start;
+  // Set scs_len to length of string, 0 if string is null
+  int scs_len = scs ? strlen(scs) : 0;
   // Check if previous character was seperator
   int prev_sep = 1;
   // Keep track of whether currently inside string
@@ -272,6 +280,15 @@ void editorUpdateSyntax(erow *row) {
     char c = row->render[i];
     // Highlight type of previous character
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
+
+    if (scs_len && !in_string) {
+      // Check if character is start of single line comment
+      if (!strncmp(&row->render[i], scs, scs_len)) {
+        // Set line to HL_COMMENT
+        memset(&row->hl[i], HL_COMMENT, row->rsize - i);
+        break;
+      }
+    }
 
     // Highlight character as string until closing quote
     if (E.syntax->flags & HL_HIGHLIGHT_STRINGS) {
@@ -317,6 +334,7 @@ void editorUpdateSyntax(erow *row) {
 int editorSyntaxToColor(int hl) {
   // Return ANSI code for each text
   switch (hl) {
+    case HL_COMMENT: return 36; // Set comments to cyan
     case HL_STRING: return 35; // Set strings to magenta
     case HL_NUMBER: return 31; // Set numbers to red
     case HL_MATCH: return 34; // Set search matches to blue
