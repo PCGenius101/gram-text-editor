@@ -108,6 +108,14 @@ struct editorConfig E;
 /*** filetypes ***/
 
 char *C_HL_extensions[] = { ".c", ".h", ".cpp", NULL};
+char *C_HL_keywords[] = {
+  "switch", "if", "while", "for", "break", "continue", "return", "else"
+  "struct", "union", "typedef", "static", "enum", "class", "case",
+
+  // End common C types (secondary keywords) with | character
+  "int|", "long|", "double|", "float|", "char|", "unsigned|", "signed|",
+  "void|", NULL
+}
 
 // Highlight database
 struct editorSyntax HLDB[] = {
@@ -265,6 +273,9 @@ void editorUpdateSyntax(erow *row) {
   memset(row->hl, HL_NORMAL, row->rsize);
   // If no filetype is set return immediatly
   if (E.syntax == NULL) return;
+
+  char **keywords = E.syntax->keywords;
+
   // Alias
   char *scs = E.syntax->singleline_comment_start;
   // Set scs_len to length of string, 0 if string is null
@@ -326,6 +337,31 @@ void editorUpdateSyntax(erow *row) {
       }
     }
 
+    // Make sure seperator came before keyword
+    if (prev_sep) {
+      int j;
+      for (j = 0; keywords[j]; j++) {
+        int klen = strlen(keywords[j]); // Length of keyword
+        // Check if secondary character
+        int kw2 = keywords[j][klen - 1] == '|';
+        // Decremnt klen to account for | character
+        if (kw2) klen--;
+
+        // Check if keyword exists at current position and check if seperator comes after keyword
+        if (!strncmp(&row->render)[i], keywords[j], klen) && is_seperator(row->render[i + klen])) {
+          // Highlight whole keyword, depending on value of kw2
+          memset(&row->hl[i], kw2 ? HL_KEYWORD2: HL_KEYWORD1, klen);
+          i += klen; // Consume entire keyword
+          break; // Break out of inner loop
+        }
+      }
+      // Check if loop was broken out of by checking for termianting NULL value
+      if (keywords[j] != NULL) {
+        prev_sep = 0;
+        continue;
+      }
+    }
+
     prev_sep = is_seperator(c);
     i++;
   }
@@ -335,6 +371,8 @@ int editorSyntaxToColor(int hl) {
   // Return ANSI code for each text
   switch (hl) {
     case HL_COMMENT: return 36; // Set comments to cyan
+    case HL_KEYWORD1: return 33; // Set keyword 1 to yellow
+    case HL_KEYWORD 2: return 32; // Set keyword 2 to green
     case HL_STRING: return 35; // Set strings to magenta
     case HL_NUMBER: return 31; // Set numbers to red
     case HL_MATCH: return 34; // Set search matches to blue
