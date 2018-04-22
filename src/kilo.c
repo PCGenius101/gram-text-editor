@@ -67,6 +67,7 @@ enum editorHighlight {
 struct editorSyntax {
   char *filetype; // Name of file type to be displayed
   char **filematch; // Array of strings to match filename against
+  char **keywords; // Array of keywords
   char *singleline_comment_start; // Pattern for signle line comments
   int flags; // Contains flags for whether to highlight numbers or strings for filetype
 };
@@ -115,13 +116,14 @@ char *C_HL_keywords[] = {
   // End common C types (secondary keywords) with | character
   "int|", "long|", "double|", "float|", "char|", "unsigned|", "signed|",
   "void|", NULL
-}
+};
 
 // Highlight database
 struct editorSyntax HLDB[] = {
   {
     "c",
     C_HL_extensions,
+    C_HL_keywords,
     "//",
     HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
   },
