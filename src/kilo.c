@@ -824,7 +824,18 @@ void editorDrawRows(struct abuf *ab) {
       int current_color = -1; // -1 for default
       int j;
       for (j = 0; j < len; j++) {
-        if (hl[j] == HL_NORMAL) { // If HL_NORMAL char set to default text color
+        if (iscntrl(c[j])) { // Check if current character is control value
+          // Translate into printable character by adding value to '@' (capital letters) or '?' if not in alphabetic range
+          char sym = (c[j] <= 26) ? '@' + c[j] : '?';
+          abAppend(ab, "\x1b[7m", 4); // Switch to inverted colors before printing translated symbol
+          abAppend(ab, &sym, 1);
+          abAppend(ab, "\x1b[m", 3); // Turn off inverted colors
+          if (current_color != -1) {
+            char buf[16];
+            int clen = snprintf(buf, sizeof(buf), "\x1b[%dm", current_color);
+            abAppend(ab, buf, clen);
+          }
+        } else if (hl[j] == HL_NORMAL) { // If HL_NORMAL char set to default text color
           if (current_color != -1) {
             abAppend(ab, "\x1b[39m", 5);
             current_color = -1;
