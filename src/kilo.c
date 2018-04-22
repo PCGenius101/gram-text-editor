@@ -824,7 +824,7 @@ void editorDrawRows(struct abuf *ab) {
       int current_color = -1; // -1 for default
       int j;
       for (j = 0; j < len; j++) {
-        if (isctrl(c[j])) { // Check if current character is control value
+        if (iscntrl(c[j])) { // Check if current character is control value
           // Translate into printable character by adding value to '@' (capital letters) or '?' if not in alphabetic range
           char sym = (c[j] <= 26) ? '@' + c[j] : '?';
           abAppend(ab, "\x1b[7m", 4); // Switch to inverted colors before printing translated symbol
