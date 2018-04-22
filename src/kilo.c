@@ -350,7 +350,7 @@ void editorUpdateSyntax(erow *row) {
         if (kw2) klen--;
 
         // Check if keyword exists at current position and check if seperator comes after keyword
-        if (!strncmp(&row->render)[i], keywords[j], klen) && is_seperator(row->render[i + klen])) {
+        if (!strncmp(&row->render[i], keywords[j], klen) && is_separator(row->render[i + klen])) {
           // Highlight whole keyword, depending on value of kw2
           memset(&row->hl[i], kw2 ? HL_KEYWORD2: HL_KEYWORD1, klen);
           i += klen; // Consume entire keyword
@@ -374,7 +374,7 @@ int editorSyntaxToColor(int hl) {
   switch (hl) {
     case HL_COMMENT: return 36; // Set comments to cyan
     case HL_KEYWORD1: return 33; // Set keyword 1 to yellow
-    case HL_KEYWORD 2: return 32; // Set keyword 2 to green
+    case HL_KEYWORD2: return 32; // Set keyword 2 to green
     case HL_STRING: return 35; // Set strings to magenta
     case HL_NUMBER: return 31; // Set numbers to red
     case HL_MATCH: return 34; // Set search matches to blue
