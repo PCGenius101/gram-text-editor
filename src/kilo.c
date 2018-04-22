@@ -51,6 +51,7 @@ enum editorKey {
 enum editorHighlight {
   HL_NORMAL = 0,
   HL_COMMENT,
+  HL_MLCOMMENT,
   HL_KEYWORD1,
   HL_KEYWORD2,
   HL_STRING,
@@ -69,17 +70,22 @@ struct editorSyntax {
   char **filematch; // Array of strings to match filename against
   char **keywords; // Array of keywords
   char *singleline_comment_start; // Pattern for signle line comments
+  char *multiline_comment_start; // Pattern for start and end of multi-line comments
+  char *multiline_comment_end;
   int flags; // Contains flags for whether to highlight numbers or strings for filetype
 };
 
 // Data type for storing a row of text
 typedef struct erow {
+  int idx; // Index within file of row
   int size;
   int rsize;
   char *chars;
   char *render;
   // Array with highlighting of each line
   unsigned char *hl;
+  // Store whether prev line is part of unenclosed ml comment
+  int hl_open_comment;
 } erow;
 
 // Struct to contain editor state
@@ -124,7 +130,7 @@ struct editorSyntax HLDB[] = {
     "c",
     C_HL_extensions,
     C_HL_keywords,
-    "//",
+    "//", "/*", "*/",
     HL_HIGHLIGHT_NUMBERS | HL_HIGHLIGHT_STRINGS
   },
 };
@@ -275,17 +281,22 @@ void editorUpdateSyntax(erow *row) {
   memset(row->hl, HL_NORMAL, row->rsize);
   // If no filetype is set return immediatly
   if (E.syntax == NULL) return;
-
+  // Aliases
   char **keywords = E.syntax->keywords;
 
-  // Alias
   char *scs = E.syntax->singleline_comment_start;
-  // Set scs_len to length of string, 0 if string is null
+  char *mcs = E.syntax->multiline_comment_start;
+  char *mce = E.syntax->multiline_comment_end;
+  // Set comment length to length of string, 0 if string is null
   int scs_len = scs ? strlen(scs) : 0;
+  int mcs_len = mcs ? strlen(mcs) : 0;
+  int mce_len = mce ? strlen(mce) : 0;
   // Check if previous character was seperator
   int prev_sep = 1;
-  // Keep track of whether currently inside string
+  // Keep track of whether currently inside string or multi-line comment
   int in_string  = 0;
+  // True if previous row has unclosed multi-line comment
+  int in_comment = (row->idx > 0 && E.row[row->idx - 1].hl_open_comment);
 
   int i = 0;
   // Loop through characters and set digits to HL_NUMBER
@@ -294,12 +305,37 @@ void editorUpdateSyntax(erow *row) {
     // Highlight type of previous character
     unsigned char prev_hl = (i > 0) ? row->hl[i - 1] : HL_NORMAL;
 
-    if (scs_len && !in_string) {
+    if (scs_len && !in_string && !in_comment) {
       // Check if character is start of single line comment
       if (!strncmp(&row->render[i], scs, scs_len)) {
         // Set line to HL_COMMENT
         memset(&row->hl[i], HL_COMMENT, row->rsize - i);
         break;
+      }
+    }
+
+    if (mcs_len && mce_len && !in_string) {
+      if (in_comment) {
+        // If currently in multi-line comment, highlight current char
+        row->hl[i] = HL_MLCOMMENT;
+        // If at end of comment highlight end string and consume
+        if (!strncmp(&row->render[i], mce, mce_len)) {
+          memset(&row->hl[i], HL_MLCOMMENT, mce_len);
+          i += mce_len;
+          in_comment = 0;
+          prev_sep = 1;
+          continue;
+        } else {
+          // Consume current, already highlighted char
+          i++;
+          continue;
+        }
+        // Check if at beginning of multi-line comment
+      } else if (!strncmp(&row->render[i], mcs, mcs_len)) {
+        memset(&row->hl[i], HL_MLCOMMENT, mcs_len); // Highlight whole mcs string
+        i += mcs_len; // Consume mcs string
+        in_comment = 1; // Change in_comment to true
+        continue;
       }
     }
 
@@ -367,12 +403,19 @@ void editorUpdateSyntax(erow *row) {
     prev_sep = is_separator(c);
     i++;
   }
+
+  int changed = (row->hl_open_comment != in_comment);
+  row->hl_open_comment = in_comment;
+  if (changed && row->idx + 1 < E.numrows) {
+    editorUpdateSyntax(&E.row[row->idx + 1]);
+  }
 }
 
 int editorSyntaxToColor(int hl) {
   // Return ANSI code for each text
   switch (hl) {
-    case HL_COMMENT: return 36; // Set comments to cyan
+    case HL_COMMENT:
+    case HL_MLCOMMENT: return 36; // Set comments to cyan
     case HL_KEYWORD1: return 33; // Set keyword 1 to yellow
     case HL_KEYWORD2: return 32; // Set keyword 2 to green
     case HL_STRING: return 35; // Set strings to magenta
@@ -472,6 +515,10 @@ void editorInsertRow(int at, char *s, size_t len) {
 
   E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
   memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
+  // Update index of each row that was displaced
+  for (int j = at + 1; j <= E.numrows; j++) E.row[j].idx++;
+
+  E.row[at].idx = at; // Row's index in file at time of insert
 
   E.row[at].size = len;
   E.row[at].chars = malloc(len + 1);
@@ -481,10 +528,11 @@ void editorInsertRow(int at, char *s, size_t len) {
   E.row[at].rsize = 0;
   E.row[at].render = NULL;
   E.row[at].hl = NULL;
+  E.row[at].hl_open_comment = 0;
   editorUpdateRow(&E.row[at]);
 
   E.numrows++;
-  E.dirty++;
+  E.dirty++; // Change dirty flag
 }
 
 void editorFreeRow(erow *row) {
@@ -497,6 +545,8 @@ void editorDelRow(int at) {
   if (at < 0 || at >= E.numrows) return;
   editorFreeRow(&E.row[at]);
   memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1));
+  // Update index of each row that was displaced
+  for (int j = at; j < E.numrows - 1; j++) E.row[j].idx--;
   E.numrows--;
   E.dirty++;
 }
