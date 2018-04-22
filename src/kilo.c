@@ -407,7 +407,7 @@ void editorUpdateSyntax(erow *row) {
   int changed = (row->hl_open_comment != in_comment);
   row->hl_open_comment = in_comment;
   if (changed && row->idx + 1 < E.numrows) {
-    editorUpdateSyntax(&E.row[row->idx + 1])
+    editorUpdateSyntax(&E.row[row->idx + 1]);
   }
 }
 
