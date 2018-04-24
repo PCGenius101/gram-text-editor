@@ -1,2 +1,3 @@
 # kilo-text-editor
-A simple terminal-based text editor
+# Some content
+This is a test. Lorem ipsum
