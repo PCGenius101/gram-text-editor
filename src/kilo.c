@@ -158,12 +158,15 @@ void die(const char *s) {
 // Disable raw mode at exit
 void disableRawMode() {
   // Error handling
-  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1)
+  if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1) {
     die("tcsetattr");
+  }
 }
 
 void enableRawMode() {
-  if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) die("tcgetattr");
+  if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) {
+    die("tcgetattr");
+  } 
   atexit(disableRawMode);
 
   // Make copy of original before making changes
