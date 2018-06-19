@@ -1,2 +1,2 @@
-# kilo-text-editor
+# gram-text-editor
 A simple lightweight text editor
